@@ -1,0 +1,60 @@
+name: Deploy Laravel with Kafka
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Step 2: Set up PHP
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring, pdo, rdkafka
+
+      # Step 3: Install Dependencies
+      - name: Install Composer Dependencies
+        run: composer install --no-dev --optimize-autoloader
+
+      - name: Install Node Dependencies and Build
+        run: |
+          npm install
+          npm run prod
+
+      # Step 4: Run Laravel Tests
+      - name: Run Laravel Tests
+        run: php artisan test
+
+      # Step 5: Deploy to Server
+      - name: Deploy to Production Server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh -o StrictHostKeyChecking=no user@your-server "rm -rf /var/www/laravel/*"
+          scp -r . user@your-server:/var/www/laravel
+          ssh user@your-server "
+            cd /var/www/laravel &&
+            composer install --no-dev --optimize-autoloader &&
+            php artisan migrate --force &&
+            php artisan cache:clear &&
+            php artisan config:clear
+          "
+
+      # Optional: Notify after deployment
+      - name: Notify Deployment Success
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: '{"text": "Deployment to Production Completed Successfully!"}'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
